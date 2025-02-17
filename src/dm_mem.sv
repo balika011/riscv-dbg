@@ -215,6 +215,7 @@ module dm_mem #(
   logic [63:0] word_mux;
   assign word_mux = (fwd_rom_q) ? rom_rdata : rdata_q;
 
+generate
   if (BusWidth == 64) begin : gen_word_mux64
     assign rdata_o = word_mux;
   end else begin : gen_word_mux32
@@ -224,7 +225,7 @@ module dm_mem #(
   // read/write logic
   logic [dm::DataCount-1:0][31:0] data_bits;
   logic [7:0][7:0] rdata;
-  always_comb (* xprop_off *) begin : p_rw_logic
+  always_comb begin : p_rw_logic
 
     halted_d_aligned   = NrHartsAligned'(halted_q);
     resuming_d_aligned = NrHartsAligned'(resuming_q);
@@ -246,24 +247,23 @@ module dm_mem #(
     if (req_i) begin
       // this is a write
       if (we_i) begin
-        unique case (addr_i[DbgAddressBits-1:0]) inside
-          HaltedAddr: begin
+          if (addr_i[DbgAddressBits-1:0] == HaltedAddr) begin
             halted_aligned[wdata_hartsel] = 1'b1;
             halted_d_aligned[wdata_hartsel] = 1'b1;
           end
-          GoingAddr: begin
+          else if (addr_i[DbgAddressBits-1:0] == GoingAddr) begin
             going = 1'b1;
           end
-          ResumingAddr: begin
+          else if (addr_i[DbgAddressBits-1:0] == ResumingAddr) begin
             // clear the halted flag as the hart resumed execution
             halted_d_aligned[wdata_hartsel] = 1'b0;
             // set the resuming flag which needs to be cleared by the debugger
             resuming_d_aligned[wdata_hartsel] = 1'b1;
           end
           // an exception occurred during execution
-          ExceptionAddr: exception = 1'b1;
+          else if (addr_i[DbgAddressBits-1:0] == ExceptionAddr) exception = 1'b1;
           // core can write data registers
-          [DataBaseAddr:DataEndAddr]: begin
+          else if ((addr_i[DbgAddressBits-1:0] >= DataBaseAddr) && (addr_i[DbgAddressBits-1:0] <= DataEndAddr)) begin
             data_valid_o = 1'b1;
             for (int dc = 0; dc < dm::DataCount; dc++) begin
               if ((addr_i[DbgAddressBits-1:2] - DataBaseAddr[DbgAddressBits-1:2]) == dc) begin
@@ -281,14 +281,11 @@ module dm_mem #(
               end
             end
           end
-          default ;
-        endcase
 
       // this is a read
       end else begin
-        unique case (addr_i[DbgAddressBits-1:0]) inside
           // variable ROM content
-          WhereToAddr: begin
+          if (addr_i[DbgAddressBits-1:0] == WhereToAddr) begin
             // variable jump to abstract cmd, program_buffer or resume
             if (resumereq_wdata_aligned[wdata_hartsel]) begin
               rdata_d = {32'b0, dm::jal('0, 21'(dm::ResumeAddress[11:0])-21'(WhereToAddr))};
@@ -308,26 +305,26 @@ module dm_mem #(
             end
           end
 
-          [DataBaseAddr:DataEndAddr]: begin
+          else if ((addr_i[DbgAddressBits-1:0] >= DataBaseAddr) && (addr_i[DbgAddressBits-1:0] <= DataEndAddr)) begin
             rdata_d = {
                       data_i[$clog2(dm::DataCount)'(((addr_i[DbgAddressBits-1:3] - DataBaseAddr[DbgAddressBits-1:3]) << 1) + 1'b1)],
                       data_i[$clog2(dm::DataCount)'(((addr_i[DbgAddressBits-1:3] - DataBaseAddr[DbgAddressBits-1:3]) << 1))]
                       };
           end
 
-          [ProgBufBaseAddr:ProgBufEndAddr]: begin
+          else if ((addr_i[DbgAddressBits-1:0] >= ProgBufBaseAddr) && (addr_i[DbgAddressBits-1:0] <= ProgBufEndAddr)) begin
             rdata_d = progbuf[$clog2(dm::ProgBufSize)'(addr_i[DbgAddressBits-1:3] -
                           ProgBufBaseAddr[DbgAddressBits-1:3])];
           end
 
           // two slots for abstract command
-          [AbstractCmdBaseAddr:AbstractCmdEndAddr]: begin
+          else if ((addr_i[DbgAddressBits-1:0] >= AbstractCmdBaseAddr) && (addr_i[DbgAddressBits-1:0] <= AbstractCmdEndAddr)) begin
             // return the correct address index
             rdata_d = abstract_cmd[3'(addr_i[DbgAddressBits-1:3] -
                            AbstractCmdBaseAddr[DbgAddressBits-1:3])];
           end
           // harts are polling for flags here
-          [FlagsBaseAddr:FlagsEndAddr]: begin
+          else if ((addr_i[DbgAddressBits-1:0] >= FlagsBaseAddr) && (addr_i[DbgAddressBits-1:0] <= FlagsEndAddr)) begin
             // release the corresponding hart
             if (({addr_i[DbgAddressBits-1:3], 3'b0} - FlagsBaseAddr[DbgAddressBits-1:0]) ==
               (DbgAddressBits'(hartsel) & {{(DbgAddressBits-3){1'b1}}, 3'b0})) begin
@@ -335,8 +332,6 @@ module dm_mem #(
             end
             rdata_d = rdata;
           end
-          default: ;
-        endcase
       end
     end
 
@@ -348,6 +343,7 @@ module dm_mem #(
 
     data_o = data_bits;
   end
+endgenerate
 
   always_comb begin : p_abstract_cmd_rom
     // this abstract command is currently unsupported
@@ -494,6 +490,7 @@ module dm_mem #(
   // For all other cases we need to set aside
   // two registers per hart, hence we also need
   // two scratch registers.
+generate
   if (HasSndScratch) begin : gen_rom_snd_scratch
     debug_rom i_debug_rom (
       .clk_i,
@@ -514,6 +511,7 @@ module dm_mem #(
       .rdata_o ( rom_rdata )
     );
   end
+endgenerate
 
   // ROM starts at the HaltAddress of the core e.g.: it immediately jumps to
   // the ROM base address

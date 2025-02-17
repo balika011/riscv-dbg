@@ -224,7 +224,7 @@ module dm_csrs #(
   // types instead.
   assign autoexecdata_idx = 4'({dm_csr_addr} - {dm::Data0});
 
-  always_comb (*xprop_off *) begin : csr_read_write
+  always_comb begin : csr_read_write
     // --------------------
     // Static Values (R/O)
     // --------------------
@@ -294,8 +294,7 @@ module dm_csrs #(
 
     // reads
     if (dmi_req_ready_o && dmi_req_valid_i && dtm_op == dm::DTM_READ) begin
-      unique case (dm_csr_addr) inside
-        [(dm::Data0):DataEnd]: begin
+        if ((dm_csr_addr >= (dm::Data0)) && (dm_csr_addr <= DataEnd)) begin
           resp_queue_inp.data = data_q[$clog2(dm::DataCount)'(autoexecdata_idx)];
           if (!cmdbusy_i) begin
             // check whether we need to re-execute the command (just give a cmd_valid)
@@ -308,14 +307,14 @@ module dm_csrs #(
             end
           end
         end
-        dm::DMControl:    resp_queue_inp.data = dmcontrol_q;
-        dm::DMStatus:     resp_queue_inp.data = dmstatus;
-        dm::Hartinfo:     resp_queue_inp.data = hartinfo_aligned[selected_hart];
-        dm::AbstractCS:   resp_queue_inp.data = abstractcs;
-        dm::AbstractAuto: resp_queue_inp.data = abstractauto_q;
-        dm::Command:      resp_queue_inp.data = '0;
-        dm::NextDM:       resp_queue_inp.data = next_dm_addr_i;
-        [(dm::ProgBuf0):ProgBufEnd]: begin
+        else if (dm_csr_addr == dm::DMControl)    resp_queue_inp.data = dmcontrol_q;
+        else if (dm_csr_addr == dm::DMStatus)     resp_queue_inp.data = dmstatus;
+        else if (dm_csr_addr == dm::Hartinfo)     resp_queue_inp.data = hartinfo_aligned[selected_hart];
+        else if (dm_csr_addr == dm::AbstractCS)   resp_queue_inp.data = abstractcs;
+        else if (dm_csr_addr == dm::AbstractAuto) resp_queue_inp.data = abstractauto_q;
+        else if (dm_csr_addr == dm::Command)      resp_queue_inp.data = '0;
+        else if (dm_csr_addr == dm::NextDM)       resp_queue_inp.data = next_dm_addr_i;
+        else if ((dm_csr_addr >= (dm::ProgBuf0)) && (dm_csr_addr <= ProgBufEnd)) begin
           resp_queue_inp.data = progbuf_q[dmi_req_i.addr[$clog2(dm::ProgBufSize)-1:0]];
           if (!cmdbusy_i) begin
             // check whether we need to re-execute the command (just give a cmd_valid)
@@ -330,20 +329,20 @@ module dm_csrs #(
             end
           end
         end
-        dm::HaltSum0: resp_queue_inp.data = haltsum0;
-        dm::HaltSum1: resp_queue_inp.data = haltsum1;
-        dm::HaltSum2: resp_queue_inp.data = haltsum2;
-        dm::HaltSum3: resp_queue_inp.data = haltsum3;
-        dm::SBCS: begin
+        else if (dm_csr_addr == dm::HaltSum0) resp_queue_inp.data = haltsum0;
+        else if (dm_csr_addr == dm::HaltSum1) resp_queue_inp.data = haltsum1;
+        else if (dm_csr_addr == dm::HaltSum2) resp_queue_inp.data = haltsum2;
+        else if (dm_csr_addr == dm::HaltSum3) resp_queue_inp.data = haltsum3;
+        else if (dm_csr_addr == dm::SBCS) begin
           resp_queue_inp.data = sbcs_q;
         end
-        dm::SBAddress0: begin
+        else if (dm_csr_addr == dm::SBAddress0) begin
           resp_queue_inp.data = sbaddr_q[31:0];
         end
-        dm::SBAddress1: begin
+        else if (dm_csr_addr == dm::SBAddress1) begin
           resp_queue_inp.data = sbaddr_q[63:32];
         end
-        dm::SBData0: begin
+        else if (dm_csr_addr == dm::SBData0) begin
           // access while the SBA was busy
           if (sbbusy_i || sbcs_q.sbbusyerror) begin
             sbcs_d.sbbusyerror = 1'b1;
@@ -353,7 +352,7 @@ module dm_csrs #(
             resp_queue_inp.data = sbdata_q[31:0];
           end
         end
-        dm::SBData1: begin
+        else if (dm_csr_addr == dm::SBData1) begin
           // access while the SBA was busy
           if (sbbusy_i || sbcs_q.sbbusyerror) begin
             sbcs_d.sbbusyerror = 1'b1;
@@ -362,14 +361,11 @@ module dm_csrs #(
             resp_queue_inp.data = sbdata_q[63:32];
           end
         end
-        default:;
-      endcase
     end
 
     // write
     if (dmi_req_ready_o && dmi_req_valid_i && dtm_op == dm::DTM_WRITE) begin
-      unique case (dm_csr_addr) inside
-        [(dm::Data0):DataEnd]: begin
+        if ((dm_csr_addr >= (dm::Data0)) && (dm_csr_addr <= DataEnd)) begin
           if (dm::DataCount > 0) begin
             // attempts to write them while busy is set does not change their value
             if (!cmdbusy_i) begin
@@ -385,17 +381,17 @@ module dm_csrs #(
             end
           end
         end
-        dm::DMControl: begin
+        else if (dm_csr_addr == dm::DMControl) begin
           dmcontrol_d = dmi_req_i.data;
           // clear the havreset of the selected hart
           if (dmcontrol_d.ackhavereset) begin
             havereset_d_aligned[selected_hart] = 1'b0;
           end
         end
-        dm::DMStatus:; // write are ignored to R/O register
-        dm::Hartinfo:; // hartinfo is R/O
+        else if (dm_csr_addr == dm::DMStatus); // write are ignored to R/O register
+        else if (dm_csr_addr == dm::Hartinfo); // hartinfo is R/O
         // only command error is write-able
-        dm::AbstractCS: begin // W1C
+        else if (dm_csr_addr == dm::AbstractCS) begin // W1C
           // Gets set if an abstract command fails. The bits in this
           // field remain set until they are cleared by writing 1 to
           // them. No abstract command is started until the value is
@@ -411,7 +407,7 @@ module dm_csrs #(
             end
           end
         end
-        dm::Command: begin
+        else if (dm_csr_addr == dm::Command) begin
           // writes are ignored if a command is already busy
           if (!cmdbusy_i) begin
             cmd_valid_d = 1'b1;
@@ -425,8 +421,8 @@ module dm_csrs #(
             end
           end
         end
-        dm::NextDM:; // nextdm is R/O
-        dm::AbstractAuto: begin
+        else if (dm_csr_addr == dm::NextDM); // nextdm is R/O
+        else if (dm_csr_addr == dm::AbstractAuto) begin
           // this field can only be written legally when there is no command executing
           if (!cmdbusy_i) begin
             abstractauto_d                 = 32'h0;
@@ -439,7 +435,7 @@ module dm_csrs #(
             end
           end
         end
-        [(dm::ProgBuf0):ProgBufEnd]: begin
+        else if ((dm_csr_addr >= (dm::ProgBuf0)) && (dm_csr_addr <= ProgBufEnd)) begin
           // attempts to write them while busy is set does not change their value
           if (!cmdbusy_i) begin
             progbuf_d[dmi_req_i.addr[$clog2(dm::ProgBufSize)-1:0]] = dmi_req_i.data;
@@ -456,7 +452,7 @@ module dm_csrs #(
             end
           end
         end
-        dm::SBCS: begin
+        else if (dm_csr_addr == dm::SBCS) begin
           // access while the SBA was busy
           if (sbbusy_i) begin
             sbcs_d.sbbusyerror = 1'b1;
@@ -469,7 +465,7 @@ module dm_csrs #(
             sbcs_d.sberror     = (|sbcs.sberror) ? 3'b0 : sbcs_q.sberror;
           end
         end
-        dm::SBAddress0: begin
+        else if (dm_csr_addr == dm::SBAddress0) begin
           // access while the SBA was busy
           if (sbbusy_i || sbcs_q.sbbusyerror) begin
             sbcs_d.sbbusyerror = 1'b1;
@@ -479,7 +475,7 @@ module dm_csrs #(
             sbaddress_write_valid_o = (sbcs_q.sberror == '0);
           end
         end
-        dm::SBAddress1: begin
+        else if (dm_csr_addr == dm::SBAddress1) begin
           // access while the SBA was busy
           if (sbbusy_i || sbcs_q.sbbusyerror) begin
             sbcs_d.sbbusyerror = 1'b1;
@@ -488,7 +484,7 @@ module dm_csrs #(
             sbaddr_d[63:32] = dmi_req_i.data;
           end
         end
-        dm::SBData0: begin
+        else if (dm_csr_addr == dm::SBData0) begin
           // access while the SBA was busy
           if (sbbusy_i || sbcs_q.sbbusyerror) begin
            sbcs_d.sbbusyerror = 1'b1;
@@ -498,7 +494,7 @@ module dm_csrs #(
             sbdata_write_valid_o = (sbcs_q.sberror == '0);
           end
         end
-        dm::SBData1: begin
+        else if (dm_csr_addr == dm::SBData1) begin
           // access while the SBA was busy
           if (sbbusy_i || sbcs_q.sbbusyerror) begin
            sbcs_d.sbbusyerror = 1'b1;
@@ -507,8 +503,6 @@ module dm_csrs #(
             sbdata_d[63:32] = dmi_req_i.data;
           end
         end
-        default:;
-      endcase
     end
     // hart threw a command error and has precedence over bus writes
     if (cmderror_valid_i) begin
@@ -591,8 +585,9 @@ module dm_csrs #(
 
   // response FIFO
   fifo_v2 #(
-    .dtype            ( logic [$bits(dmi_resp_o)-1:0] ),
-    .DEPTH            ( 2                             )
+    //.dtype            ( logic [$bits(dmi_resp_o)-1:0] ),
+    .WIDTH            ( $bits(dmi_resp_o) ),
+    .DEPTH            ( 2 )
   ) i_fifo (
     .clk_i,
     .rst_ni,
@@ -603,9 +598,9 @@ module dm_csrs #(
     .empty_o          ( resp_queue_empty     ),
     .alm_full_o       (                      ),
     .alm_empty_o      (                      ),
-    .data_i           ( resp_queue_inp       ),
+    .data_i           ( {resp_queue_inp.resp, resp_queue_inp.data} ),
     .push_i           ( resp_queue_push      ),
-    .data_o           ( dmi_resp_o           ),
+    .data_o           ( {dmi_resp_o.resp, dmi_resp_o.data} ),
     .pop_i            ( resp_queue_pop       )
   );
 
