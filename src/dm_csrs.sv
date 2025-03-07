@@ -654,9 +654,11 @@ module dm_csrs #(
         abstractauto_q               <= abstractauto_d;
         progbuf_q                    <= progbuf_d;
         data_q                       <= data_d;
+`ifdef SBCS_ENABLE
         sbcs_q                       <= sbcs_d;
         sbaddr_q                     <= sbaddr_d;
         sbdata_q                     <= sbdata_d;
+`endif
       end
     end
   end
